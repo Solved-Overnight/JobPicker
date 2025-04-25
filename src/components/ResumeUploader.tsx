@@ -1,146 +1,157 @@
-import React, { useCallback, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, CheckCircle, AlertCircle } from 'lucide-react';
-import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
-import 'react-circular-progressbar/dist/styles.css';
+import { UploadCloud, FileText, XCircle, Loader2, AlertTriangle } from 'lucide-react'; // Added icons
 
 interface ResumeUploaderProps {
-  onResumeUpload: (resume: File) => Promise<void>;
+  onUploadSuccess: (file: File) => void; // Callback with the uploaded file
   darkMode: boolean;
+  maxSize?: number; // Max size in bytes (e.g., 5 * 1024 * 1024 for 5MB)
 }
 
-const ResumeUploader: React.FC<ResumeUploaderProps> = ({ onResumeUpload, darkMode }) => {
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
-  const [errorMessage, setErrorMessage] = useState('');
+const ResumeUploader: React.FC<ResumeUploaderProps> = ({
+  onUploadSuccess,
+  darkMode,
+  maxSize = 5 * 1024 * 1024 // Default 5MB
+}) => {
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0); // Basic progress simulation
 
-  const onDrop = useCallback(async (acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file && file.type === 'application/pdf') {
-      setUploadStatus('uploading');
-      try {
-        // Simulate upload progress
-        for (let i = 0; i <= 100; i += 10) {
-          setUploadProgress(i);
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        await onResumeUpload(file);
-        setUploadStatus('success');
-      } catch (error) {
-        setErrorMessage(error instanceof Error ? error.message : 'Failed to upload resume');
-        setUploadStatus('error');
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
+    setUploadError(null);
+    setUploadedFile(null);
+    setProgress(0);
+
+    if (fileRejections.length > 0) {
+      const error = fileRejections[0].errors[0];
+      if (error.code === 'file-too-large') {
+        setUploadError(`File is too large. Max size is ${maxSize / 1024 / 1024}MB.`);
+      } else if (error.code === 'file-invalid-type') {
+        setUploadError('Invalid file type. Please upload PDF, DOC, DOCX, or TXT.');
+      } else {
+        setUploadError(error.message || 'File rejected.');
       }
-    } else {
-      setErrorMessage('Please upload a PDF file');
-      setUploadStatus('error');
+      return;
     }
-  }, [onResumeUpload]);
+
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      setUploadedFile(file);
+      // Start simulated upload process
+      setIsUploading(true);
+      let currentProgress = 0;
+      const interval = setInterval(() => {
+        currentProgress += 10;
+        setProgress(currentProgress);
+        if (currentProgress >= 100) {
+          clearInterval(interval);
+          // Simulate success/failure based on filename (for demo)
+          if (file.name.toLowerCase().includes("fail")) {
+             setUploadError("Simulated upload failure. Please try again.");
+             setIsUploading(false);
+             setUploadedFile(null); // Clear file on failure
+             setProgress(0);
+          } else {
+             console.log('Simulated upload success:', file.name);
+             onUploadSuccess(file);
+             setIsUploading(false);
+             // Keep uploadedFile state to show preview, or clear it if parent handles display
+             // setUploadedFile(null);
+             // setProgress(0);
+          }
+        }
+      }, 150); // Simulate progress update speed
+    }
+  }, [onUploadSuccess, maxSize]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'application/pdf': ['.pdf']
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'text/plain': ['.txt'],
     },
-    maxFiles: 1
+    maxSize: maxSize,
+    multiple: false, // Allow only single file upload
+    disabled: isUploading, // Disable dropzone while uploading
   });
 
+  const removeFile = () => {
+    setUploadedFile(null);
+    setUploadError(null);
+    setIsUploading(false);
+    setProgress(0);
+  };
+
+  const formatBytes = (bytes: number, decimals = 2) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+  };
+
   return (
-    <div className={`p-6 rounded-xl ${darkMode ? 'bg-surface-800' : 'bg-white'} shadow-lg`}>
-      <h3 className="text-xl font-semibold mb-4">Upload Your Resume</h3>
-      
-      <AnimatePresence mode="wait">
-        {uploadStatus === 'idle' && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            {...getRootProps()}
-            className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors
-              ${isDragActive 
-                ? darkMode ? 'border-primary-400 bg-surface-700' : 'border-primary-500 bg-primary-50'
-                : darkMode ? 'border-surface-600 hover:border-primary-500' : 'border-gray-300 hover:border-primary-400'
-              }`}
-          >
-            <input {...getInputProps()} />
-            <Upload className={`w-12 h-12 mx-auto mb-4 ${
-              darkMode ? 'text-primary-400' : 'text-primary-500'
-            }`} />
-            <p className="text-lg font-medium mb-2">
-              {isDragActive ? 'Drop your resume here' : 'Drag & drop your resume here'}
-            </p>
-            <p className={`text-sm ${darkMode ? 'text-surface-400' : 'text-surface-500'}`}>
-              or click to select a PDF file
-            </p>
-          </motion.div>
-        )}
+    <div className={`p-4 border border-dashed rounded-lg ${darkMode ? 'border-surface-600 bg-surface-750' : 'border-gray-300 bg-gray-50'}`}>
+      {!uploadedFile && !isUploading && (
+        <div
+          {...getRootProps()}
+          className={`cursor-pointer flex flex-col items-center justify-center p-6 rounded-lg transition-colors
+            ${isDragActive
+              ? (darkMode ? 'bg-primary-900 bg-opacity-30 border-primary-500' : 'bg-primary-50 border-primary-300')
+              : (darkMode ? 'hover:bg-surface-700' : 'hover:bg-gray-100')
+            }
+            ${uploadError ? (darkMode ? 'border-red-500' : 'border-red-400') : ''}
+          `}
+        >
+          <input {...getInputProps()} />
+          <UploadCloud className={`w-10 h-10 mb-3 ${darkMode ? 'text-surface-400' : 'text-gray-500'}`} />
+          <span className={`font-medium ${darkMode ? 'text-white' : 'text-gray-700'}`}>
+            {isDragActive ? 'Drop the file here...' : 'Click or drag resume file to upload'}
+          </span>
+          <span className={`text-xs mt-1 ${darkMode ? 'text-surface-400' : 'text-gray-500'}`}>
+            PDF, DOC, DOCX, TXT (Max {maxSize / 1024 / 1024}MB)
+          </span>
+        </div>
+      )}
 
-        {uploadStatus === 'uploading' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="flex flex-col items-center p-8"
-          >
-            <div className="w-24 h-24 mb-4">
-              <CircularProgressbar
-                value={uploadProgress}
-                text={`${uploadProgress}%`}
-                styles={buildStyles({
-                  pathColor: darkMode ? '#38bdf8' : '#0ea5e9',
-                  textColor: darkMode ? '#e0f2fe' : '#0ea5e9',
-                  trailColor: darkMode ? '#1e293b' : '#f1f5f9'
-                })}
-              />
+      {uploadError && (
+        <p className="text-xs text-red-500 mt-2 flex items-center">
+          <AlertTriangle className="w-3 h-3 mr-1 flex-shrink-0" /> {uploadError}
+        </p>
+      )}
+
+      {(uploadedFile || isUploading) && !uploadError && (
+        <div className={`p-3 rounded-md border ${darkMode ? 'bg-surface-700 border-surface-600' : 'bg-white border-gray-300'}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 overflow-hidden">
+              <FileText className={`w-5 h-5 flex-shrink-0 ${darkMode ? 'text-primary-400' : 'text-primary-600'}`} />
+              <span className="text-sm font-medium truncate" title={uploadedFile?.name}>
+                {uploadedFile?.name || 'Uploading...'}
+              </span>
+              {uploadedFile && <span className="text-xs text-gray-500 flex-shrink-0">({formatBytes(uploadedFile.size)})</span>}
             </div>
-            <p className="text-lg font-medium">Processing your resume...</p>
-          </motion.div>
-        )}
-
-        {uploadStatus === 'success' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="flex flex-col items-center p-8"
-          >
-            <CheckCircle className="w-16 h-16 text-green-500 mb-4" />
-            <p className="text-lg font-medium">Resume uploaded successfully!</p>
-            <button
-              onClick={() => setUploadStatus('idle')}
-              className={`mt-4 px-4 py-2 rounded-lg text-sm font-medium
-                ${darkMode 
-                  ? 'bg-surface-700 hover:bg-surface-600 text-white' 
-                  : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
-                }`}
-            >
-              Upload Another
-            </button>
-          </motion.div>
-        )}
-
-        {uploadStatus === 'error' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="flex flex-col items-center p-8"
-          >
-            <AlertCircle className="w-16 h-16 text-red-500 mb-4" />
-            <p className="text-lg font-medium text-red-500">{errorMessage}</p>
-            <button
-              onClick={() => setUploadStatus('idle')}
-              className={`mt-4 px-4 py-2 rounded-lg text-sm font-medium
-                ${darkMode 
-                  ? 'bg-surface-700 hover:bg-surface-600 text-white' 
-                  : 'bg-surface-100 hover:bg-surface-200 text-surface-700'
-                }`}
-            >
-              Try Again
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {isUploading ? (
+              <Loader2 className="w-5 h-5 text-primary-500 animate-spin flex-shrink-0" />
+            ) : (
+              <button onClick={removeFile} className={`p-1 rounded-full ${darkMode ? 'text-gray-400 hover:bg-surface-600' : 'text-gray-500 hover:bg-gray-100'}`}>
+                <XCircle className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+          {isUploading && (
+            <div className="mt-2 w-full bg-gray-200 rounded-full h-1.5 dark:bg-gray-700">
+              <div
+                className="bg-primary-600 h-1.5 rounded-full transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

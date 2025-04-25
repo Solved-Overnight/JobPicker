@@ -5,7 +5,7 @@ import { BarChart, Activity, CheckCircle, XCircle, Clock } from 'lucide-react';
 import { AutomationStats, ApplicationStatus } from '../types';
 
 interface AutomationDashboardProps {
-  stats: AutomationStats;
+  stats: AutomationStats | undefined;
   recentApplications: ApplicationStatus[];
   darkMode: boolean;
 }
@@ -15,7 +15,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
   recentApplications,
   darkMode
 }) => {
-  const successRate = (stats.successfulApplications / stats.totalApplications) * 100 || 0;
+  const successRate = (stats?.successfulApplications / stats?.totalApplications) * 100 || 0;
 
   return (
     <div className={`p-6 rounded-xl ${darkMode ? 'bg-surface-800' : 'bg-white'} shadow-lg`}>
@@ -52,7 +52,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
           </div>
           <div className="flex items-center text-sm">
             <CheckCircle className="w-4 h-4 text-green-500 mr-1" />
-            <span>{stats.successfulApplications} successful</span>
+            <span>{stats?.successfulApplications} successful</span>
           </div>
         </motion.div>
 
@@ -67,7 +67,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
           <p className={`text-sm ${darkMode ? 'text-surface-400' : 'text-surface-500'}`}>
             Total Applications
           </p>
-          <p className="text-2xl font-bold mb-4">{stats.totalApplications}</p>
+          <p className="text-2xl font-bold mb-4">{stats?.totalApplications}</p>
           <div className="flex items-center text-sm">
             <Clock className="w-4 h-4 text-primary-500 mr-1" />
             <span>Last 30 days</span>
@@ -85,7 +85,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
           <p className={`text-sm ${darkMode ? 'text-surface-400' : 'text-surface-500'}`}>
             Average Match Score
           </p>
-          <p className="text-2xl font-bold mb-4">{stats.averageMatchScore.toFixed(1)}%</p>
+          <p className="text-2xl font-bold mb-4">{stats?.averageMatchScore?.toFixed(1)}%</p>
           <div className="flex items-center text-sm">
             <BarChart className="w-4 h-4 text-primary-500 mr-1" />
             <span>Based on skills match</span>
@@ -103,7 +103,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
           <p className={`text-sm ${darkMode ? 'text-surface-400' : 'text-surface-500'}`}>
             Failed Applications
           </p>
-          <p className="text-2xl font-bold mb-4">{stats.failedApplications}</p>
+          <p className="text-2xl font-bold mb-4">{stats?.failedApplications}</p>
           <div className="flex items-center text-sm">
             <XCircle className="w-4 h-4 text-red-500 mr-1" />
             <span>Requires attention</span>
@@ -155,7 +155,7 @@ const AutomationDashboard: React.FC<AutomationDashboardProps> = ({
                       ? 'text-primary-500'
                       : 'text-red-500'
                   }`}>
-                    {application.matchScore}%
+                    {application.matchScore !== undefined ? `${application.matchScore.toFixed(1)}%` : 'N/A'}
                   </p>
                 </div>
                 <div className="w-8 h-8">

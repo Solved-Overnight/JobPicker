@@ -191,3 +191,5 @@ export function generateMockJobs(searchParams: JobSearchParams, count: number): 
   
   return mockJobs;
 }
+
+export const mockJobListings = generateMockJobs({ role: 'Software Engineer', location: 'Remote', platforms: [] }, 5);

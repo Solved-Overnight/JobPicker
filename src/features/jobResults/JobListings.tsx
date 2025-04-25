@@ -1,273 +1,300 @@
-import React, { useEffect, useState } from 'react';
-import { Bookmark, BookmarkCheck, ExternalLink, Calendar, DollarSign, MapPin, Filter } from 'lucide-react';
-import { JobSearchParams, Job } from '../../types';
-import { generateMockJobs } from '../../utils/mockData';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Briefcase, MapPin, Clock, ExternalLink, Bookmark, Loader2, AlertTriangle, Search } from 'lucide-react';
+import { JobListing, JobSearchParams, JobPlatform } from '../../types';
 import JobDetailsModal from './JobDetailsModal';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import { scrapeIndeed as scrapeIndeedProxy } from '../../api/indeed';
 
 interface JobListingsProps {
   searchParams: JobSearchParams;
   darkMode: boolean;
+  jobSearchApiKey?: string;
 }
 
-const JobListings: React.FC<JobListingsProps> = ({ searchParams, darkMode }) => {
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'saved' | 'applied'>('all');
+const JobListings: React.FC<JobListingsProps> = ({ searchParams, darkMode, jobSearchApiKey }) => {
+  const [listings, setListings] = useState<JobListing[]>([]);
+  const [selectedJob, setSelectedJob] = useState<JobListing | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const jobsPerPage = 10;
 
   useEffect(() => {
-    // Simulate API call
-    setLoading(true);
-    setTimeout(() => {
-      const mockJobs = generateMockJobs(searchParams, 15);
-      setJobs(mockJobs);
-      setLoading(false);
-    }, 1500);
-  }, [searchParams]);
+    const fetchJobs = async () => {
+      if (!searchParams.role) {
+        setListings([]);
+        setIsLoading(false);
+        setError(null);
+        return;
+      }
 
-  const toggleSaveJob = (jobId: string) => {
-    setJobs(jobs.map(job => 
-      job.id === jobId 
-        ? { ...job, saved: !job.saved } 
-        : job
-    ));
+      setIsLoading(true);
+      setError(null);
+      setListings([]);
+      setCurrentPage(1);
+
+      try {
+        const html = await scrapeIndeedProxy(searchParams.role, searchParams.location);
+        const indeedListings = parseIndeedJobListings(html);
+        setListings(indeedListings);
+      } catch (err: any) {
+        console.error("Failed to fetch job listings:", err);
+        setError(err.message || "An unknown error occurred while fetching jobs.");
+        setListings([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchJobs();
+  }, [searchParams, jobSearchApiKey]);
+
+  const parseIndeedJobListings = (html: string): JobListing[] => {
+    const $ = cheerio.load(html);
+
+    if (!$) {
+      throw new Error('Failed to load HTML with Cheerio');
+    }
+
+    const jobListings: JobListing[] = [];
+
+    $('.job_seen_beacon').each((i, el) => {
+      const jobTitle = $(el).find('h2.jobTitle a').text().trim();
+      const company = $(el).find('.companyName').text().trim();
+      const location = $(el).find('.companyLocation').text().trim();
+      const jobUrl = 'https://www.indeed.com' + $(el).find('h2.jobTitle a').attr('href');
+      const jobId = jobUrl.split('&')[0].split('jk=')[1];
+
+      jobListings.push({
+        id: jobId,
+        title: jobTitle,
+        company: company,
+        location: location,
+        platform: 'Indeed',
+        url: jobUrl,
+      });
+    });
+
+    return jobListings;
   };
 
-  const markAsApplied = (jobId: string) => {
-    setJobs(jobs.map(job => 
-      job.id === jobId 
-        ? { ...job, applied: true } 
-        : job
-    ));
-    setShowModal(false);
+  const scrapeIndeed = async (role: string, location: string | undefined): Promise<JobListing[]> => {
+    const baseUrl = 'https://www.indeed.com/jobs';
+    const searchParams = new URLSearchParams({
+      q: role,
+      l: location || '',
+    });
+    const url = `${baseUrl}?${searchParams.toString()}`;
+
+    try {
+      const response = await axios.get(url);
+      const html = response.data;
+      const $ = cheerio.load(html);
+
+      if (!$) {
+        throw new Error('Failed to load HTML with Cheerio');
+      }
+
+      const jobListings: JobListing[] = [];
+
+      $('.job_seen_beacon').each((i, el) => {
+        const jobTitle = $(el).find('h2.jobTitle a').text().trim();
+        const company = $(el).find('.companyName').text().trim();
+        const location = $(el).find('.companyLocation').text().trim();
+        const jobUrl = 'https://www.indeed.com' + $(el).find('h2.jobTitle a').attr('href');
+        const jobId = jobUrl.split('&')[0].split('jk=')[1];
+
+        jobListings.push({
+          id: jobId,
+          title: jobTitle,
+          company: company,
+          location: location,
+          platform: 'Indeed',
+          url: jobUrl,
+        });
+      });
+
+      return jobListings;
+    } catch (error: any) {
+      console.error('Error scraping Indeed:', error);
+      throw new Error(`Failed to scrape Indeed: ${error.message}`);
+    }
   };
 
-  const filteredJobs = filter === 'all' 
-    ? jobs 
-    : filter === 'saved' 
-      ? jobs.filter(job => job.saved) 
-      : jobs.filter(job => job.applied);
-
-  const openJobDetails = (job: Job) => {
+  const handleViewDetails = (job: JobListing) => {
     setSelectedJob(job);
-    setShowModal(true);
   };
 
-  const closeJobDetails = () => {
-    setShowModal(false);
+  const handleCloseModal = () => {
+    setSelectedJob(null);
   };
+
+  const handleSaveJob = (jobId: string) => {
+    console.log("Saving job:", jobId);
+    setListings(listings.map(job =>
+      job.id === jobId ? { ...job, isSaved: !job.isSaved } : job
+    ));
+  };
+
+  const indexOfLastJob = currentPage * jobsPerPage;
+  const indexOfFirstJob = indexOfLastJob - jobsPerPage;
+  const currentJobs = listings.slice(indexOfFirstJob, indexOfLastJob);
+  const totalPages = Math.ceil(listings.length / jobsPerPage);
+
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
 
   return (
-    <div className={`rounded-lg shadow-md overflow-hidden ${
-      darkMode ? 'bg-slate-800' : 'bg-white'
-    }`}>
-      <div className={`px-6 py-4 border-b ${
-        darkMode ? 'border-slate-700' : 'border-gray-200'
-      } flex flex-col sm:flex-row justify-between items-start sm:items-center`}>
-        <div>
-          <h2 className="text-xl font-bold mb-1">Search Results</h2>
-          <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            {loading ? 'Searching...' : `${filteredJobs.length} jobs found for "${searchParams.role}"`}
-          </p>
-        </div>
-        
-        <div className="flex mt-3 sm:mt-0 space-x-2">
-          <div className={`inline-flex rounded-lg overflow-hidden ${
-            darkMode ? 'bg-slate-700' : 'bg-gray-100'
-          }`}>
-            {['all', 'saved', 'applied'].map((option) => (
-              <button
-                key={option}
-                onClick={() => setFilter(option as any)}
-                className={`px-3 py-1.5 text-sm font-medium ${
-                  filter === option
-                    ? darkMode 
-                      ? 'bg-blue-600 text-white' 
-                      : 'bg-blue-500 text-white'
-                    : darkMode
-                      ? 'text-gray-300 hover:bg-slate-600' 
-                      : 'text-gray-700 hover:bg-gray-200'
-                } transition-colors`}
-              >
-                {option.charAt(0).toUpperCase() + option.slice(1)}
-              </button>
-            ))}
-          </div>
-          
-          <button className={`p-1.5 rounded ${
-            darkMode ? 'bg-slate-700 hover:bg-slate-600' : 'bg-gray-100 hover:bg-gray-200'
-          } transition-colors`}>
-            <Filter className="w-5 h-5" />
-          </button>
-        </div>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className={`mt-6 rounded-xl shadow-lg overflow-hidden ${darkMode ? 'bg-surface-800' : 'bg-white'
+        }`}
+    >
+      <div className={`px-6 py-4 border-b ${darkMode ? 'border-surface-700' : 'border-gray-200'
+        }`}>
+        <h2 className="text-xl font-bold flex items-center">
+          <Search className="w-5 h-5 mr-2 text-primary-500" />
+          Job Listings for "{searchParams.role}" {searchParams.location && `in "${searchParams.location}"`}
+        </h2>
       </div>
-      
-      {loading ? (
-        <div className="p-8 flex flex-col items-center justify-center">
-          <div className="w-12 h-12 rounded-full border-4 border-t-blue-500 border-r-blue-500 border-b-transparent border-l-transparent animate-spin mb-4"></div>
-          <p className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-            Searching for jobs across platforms...
-          </p>
-        </div>
-      ) : filteredJobs.length === 0 ? (
-        <div className="p-8 text-center">
-          <p className={`text-lg font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-            {filter === 'all' 
-              ? 'No jobs found for your search criteria.' 
-              : filter === 'saved' 
-                ? 'You have no saved jobs.' 
-                : 'You have not applied to any jobs yet.'}
-          </p>
-          {filter !== 'all' && (
-            <button
-              onClick={() => setFilter('all')}
-              className={`mt-4 px-4 py-2 rounded-lg ${
-                darkMode 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                  : 'bg-blue-500 hover:bg-blue-600 text-white'
-              } transition-colors`}
-            >
-              View All Jobs
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="divide-y divide-gray-200 dark:divide-slate-700">
-          {filteredJobs.map(job => (
-            <div 
-              key={job.id} 
-              className={`p-6 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors`}
-            >
-              <div className="flex justify-between">
-                <div className="flex-grow">
-                  <div className="flex items-start justify-between">
+
+      <div className="p-6">
+        {isLoading && (
+          <div className="flex justify-center items-center py-10">
+            <Loader2 className={`w-8 h-8 animate-spin ${darkMode ? 'text-primary-400' : 'text-primary-500'}`} />
+            <span className="ml-3 text-lg">Searching for jobs...</span>
+          </div>
+        )}
+
+        {error && (
+          <div className={`p-4 rounded-md flex items-center ${darkMode ? 'bg-red-900 bg-opacity-40 text-red-300' : 'bg-red-100 text-red-700'}`}>
+            <AlertTriangle className="w-5 h-5 mr-3 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Error fetching jobs:</p>
+              <p className="text-sm">{error}</p>
+              {!jobSearchApiKey && <p className="text-sm mt-1">Please add a Job Search API key in the settings.</p>}
+            </div>
+          </div>
+        )}
+
+        {!isLoading && !error && listings.length === 0 && searchParams.role && (
+          <div className="text-center py-10">
+            <Search className={`w-12 h-12 mx-auto mb-4 ${darkMode ? 'text-surface-500' : 'text-surface-400'}`} />
+            <p className={`text-lg font-medium ${darkMode ? 'text-surface-300' : 'text-surface-600'}`}>No jobs found matching your criteria.</p>
+            <p className={`text-sm ${darkMode ? 'text-surface-400' : 'text-surface-500'}`}>Try broadening your search terms.</p>
+          </div>
+        )}
+
+        {!isLoading && !error && listings.length > 0 && (
+          <>
+            <div className="space-y-4">
+              {currentJobs.map((job) => (
+                <motion.div
+                  key={job.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={`p-4 rounded-lg border ${darkMode
+                      ? 'bg-surface-750 border-surface-700 hover:bg-surface-700'
+                      : 'bg-surface-50 border-surface-200 hover:bg-surface-100'
+                    } transition-colors shadow-sm`}
+                >
+                  <div className="flex justify-between items-start">
                     <div>
-                      <button 
-                        onClick={() => openJobDetails(job)}
-                        className="text-lg font-semibold hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+                      <h3 className={`text-lg font-semibold ${darkMode ? 'text-primary-400' : 'text-primary-600'}`}>{job.title}</h3>
+                      <p className="text-sm font-medium">{job.company}</p>
+                    </div>
+                    <div className="flex items-center space-x-2 flex-shrink-0 ml-4">
+                       {/* Save Job Button */}
+                       <button
+                         onClick={() => handleSaveJob(job.id)}
+                         className={`p-1.5 rounded-full transition-colors ${
+                           job.isSaved
+                             ? (darkMode ? 'bg-yellow-600 text-white hover:bg-yellow-700' : 'bg-yellow-400 text-yellow-900 hover:bg-yellow-500')
+                             : (darkMode ? 'text-surface-400 hover:bg-surface-600 hover:text-yellow-400' : 'text-surface-500 hover:bg-surface-200 hover:text-yellow-500')
+                         }`}
+                         aria-label={job.isSaved ? "Unsave job" : "Save job"}
+                         title={job.isSaved ? "Unsave job" : "Save job"}
+                       >
+                         <Bookmark className={`w-4 h-4 ${job.isSaved ? 'fill-current' : ''}`} />
+                       </button>
+                      {/* External Link Button */}
+                      <a
+                        href={job.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`p-1.5 rounded-full transition-colors ${darkMode ? 'text-surface-400 hover:bg-surface-600 hover:text-primary-400' : 'text-surface-500 hover:bg-surface-200 hover:text-primary-500'}`}
+                        aria-label="View original job post"
+                        title="View original job post"
                       >
-                        {job.title}
-                      </button>
-                      <div className="flex items-center mt-1">
-                        <span className={`text-base ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                          {job.company}
-                        </span>
-                        {job.applied && (
-                          <span className="ml-3 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            Applied
-                          </span>
-                        )}
-                      </div>
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
                     </div>
-                    <button 
-                      onClick={() => toggleSaveJob(job.id)}
-                      className={`p-1.5 rounded-full ${
-                        darkMode ? 'hover:bg-slate-600' : 'hover:bg-gray-100'
-                      } transition-colors`}
-                      aria-label={job.saved ? 'Unsave job' : 'Save job'}
-                    >
-                      {job.saved ? (
-                        <BookmarkCheck className="w-5 h-5 text-blue-500" />
-                      ) : (
-                        <Bookmark className={`w-5 h-5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                      )}
-                    </button>
                   </div>
-                  
-                  <div className="mt-3 flex flex-col sm:flex-row sm:items-center text-sm space-y-2 sm:space-y-0 sm:space-x-4">
-                    <div className="flex items-center">
-                      <MapPin className={`w-4 h-4 mr-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                      <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-                        {job.location}
+                  <div className="flex items-center text-xs space-x-4 mt-2 text-surface-500 dark:text-surface-400">
+                    <span className="flex items-center"><MapPin className="w-3 h-3 mr-1" /> {job.location}</span>
+                    <span className="flex items-center"><Briefcase className="w-3 h-3 mr-1" /> {job.platform}</span>
+                    {job.postedDate && <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {job.postedDate}</span>}
+                  </div>
+                  {job.matchScore && (
+                    <div className="mt-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${darkMode ? 'bg-green-800 text-green-300' : 'bg-green-100 text-green-700'}`}>
+                        Match Score: {job.matchScore}%
                       </span>
-                    </div>
-                    {job.salary && (
-                      <div className="flex items-center">
-                        <DollarSign className={`w-4 h-4 mr-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                        <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-                          {job.salary}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center">
-                      <Calendar className={`w-4 h-4 mr-1.5 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-                      <span className={darkMode ? 'text-gray-300' : 'text-gray-700'}>
-                        Posted {job.postedDate}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-4">
-                    <p className={`line-clamp-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {job.description}
-                    </p>
-                  </div>
-                  
-                  {job.skills && job.skills.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {job.skills.map((skill, index) => (
-                        <span 
-                          key={index} 
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            darkMode 
-                              ? 'bg-slate-700 text-gray-300' 
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {skill}
-                        </span>
-                      ))}
                     </div>
                   )}
-                </div>
-              </div>
-              
-              <div className="mt-4 flex justify-between items-center">
-                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  via <span className="font-medium">{job.platform}</span>
-                </span>
-                
-                <div className="flex space-x-3">
-                  <a
-                    href={job.applyUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`inline-flex items-center text-sm ${
-                      darkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
-                    } transition-colors`}
-                  >
-                    <ExternalLink className="w-4 h-4 mr-1" />
-                    Visit Site
-                  </a>
-                  
+                  {job.summary && (
+                    <p className={`mt-2 text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                      {job.summary}
+                    </p>
+                  )}
                   <button
-                    onClick={() => openJobDetails(job)}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-medium ${
-                      darkMode 
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
-                        : 'bg-blue-500 hover:bg-blue-600 text-white'
-                    } transition-colors`}
+                    onClick={() => handleViewDetails(job)}
+                    className={`mt-3 text-sm font-medium ${darkMode ? 'text-primary-400 hover:text-primary-300' : 'text-primary-600 hover:text-primary-700'
+                      } transition-colors`}
                   >
                     View Details
                   </button>
-                </div>
-              </div>
+                </motion.div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-      
-      {selectedJob && showModal && (
+
+            {totalPages > 1 && (
+              <div className="flex justify-center items-center space-x-2 mt-6">
+                <button
+                  onClick={() => paginate(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-1 rounded-md text-sm ${darkMode ? 'bg-surface-700 hover:bg-surface-600 disabled:opacity-50' : 'bg-surface-200 hover:bg-surface-300 disabled:opacity-50'}`}
+                >
+                  Previous
+                </button>
+                <span className="text-sm">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => paginate(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={`px-3 py-1 rounded-md text-sm ${darkMode ? 'bg-surface-700 hover:bg-surface-600 disabled:opacity-50' : 'bg-surface-200 hover:bg-surface-300 disabled:opacity-50'}`}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {selectedJob && (
         <JobDetailsModal
           job={selectedJob}
-          onClose={closeJobDetails}
-          onSave={() => toggleSaveJob(selectedJob.id)}
-          onApply={() => markAsApplied(selectedJob.id)}
+          onClose={handleCloseModal}
           darkMode={darkMode}
+          onSaveToggle={handleSaveJob}
         />
       )}
-    </div>
+    </motion.div>
   );
 };
 

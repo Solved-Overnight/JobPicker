@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
-import { Tab } from '@headlessui/react';
+import React from 'react';
 import { motion } from 'framer-motion';
-import { Search, FileText, Settings } from 'lucide-react';
 import JobSearchPanel from '../features/jobSearch/JobSearchPanel';
-import ResumeManager from '../features/resume/ResumeManager';
-import AutomationDashboard from './AutomationDashboard';
-import { JobSearchParams, AutomationStats, ApplicationStatus } from '../types';
+import AutomationDashboard from './AutomationDashboard'; // Assuming this exists
+import ResumeManager from '../features/resume/ResumeManager'; // Assuming this exists
+import { JobSearchParams, AutomationStats, ApplicationStatus, SidebarView } from '../types';
 
 interface DashboardProps {
   searchParams: JobSearchParams;
@@ -13,6 +11,8 @@ interface DashboardProps {
   stats: AutomationStats;
   recentApplications: ApplicationStatus[];
   darkMode: boolean;
+  activeView: SidebarView; // Receive active view
+  onViewChange: (view: SidebarView) => void; // To potentially switch tabs internally if needed
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -20,76 +20,62 @@ const Dashboard: React.FC<DashboardProps> = ({
   onSearch,
   stats,
   recentApplications,
-  darkMode
+  darkMode,
+  activeView, // Use activeView to determine which section might be focused/relevant
+  // onViewChange // Can be used for internal tab-like behavior if needed later
 }) => {
-  const [selectedTab, setSelectedTab] = useState(0);
 
-  const tabs = [
-    { name: 'Overview', icon: Search },
-    { name: 'Resume Manager', icon: FileText },
-    { name: 'Settings', icon: Settings }
-  ];
+  // Variants for animations
+  const sectionVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.5 } },
+  };
 
   return (
-    <div className="flex-grow p-6">
-      <Tab.Group selectedIndex={selectedTab} onChange={setSelectedTab}>
-        <Tab.List className="flex space-x-2 rounded-xl bg-surface-100 dark:bg-surface-700 p-1 mb-6">
-          {tabs.map((tab, index) => {
-            const Icon = tab.icon;
-            return (
-              <Tab
-                key={tab.name}
-                className={({ selected }) =>
-                  `w-full rounded-lg py-2.5 text-sm font-medium leading-5 transition-all
-                  ${selected
-                    ? 'bg-white dark:bg-surface-800 text-primary-600 dark:text-primary-400 shadow'
-                    : 'text-surface-600 dark:text-surface-400 hover:bg-white/[0.12] hover:text-primary-600 dark:hover:text-primary-400'
-                  }`
-                }
-              >
-                <motion.div
-                  initial={false}
-                  animate={{ scale: selectedTab === index ? 1 : 0.9 }}
-                  className="flex items-center justify-center space-x-2"
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.name}</span>
-                </motion.div>
-              </Tab>
-            );
-          })}
-        </Tab.List>
+    <div className="space-y-8"> {/* Add spacing between sections */}
 
-        <Tab.Panels>
-          <Tab.Panel>
-            <div className="space-y-6">
-              <AutomationDashboard
-                stats={stats}
-                recentApplications={recentApplications}
-                darkMode={darkMode}
-              />
-              <JobSearchPanel
-                searchParams={searchParams}
-                onSearch={onSearch}
-                darkMode={darkMode}
-              />
-            </div>
-          </Tab.Panel>
+      {/* Automation Dashboard Section */}
+      <motion.section
+        id="automation-dashboard-section" // Ensure this ID matches the scroll target
+        variants={sectionVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <AutomationDashboard
+          stats={stats}
+          recentApplications={recentApplications}
+          darkMode={darkMode}
+        />
+      </motion.section>
 
-          <Tab.Panel>
-            <ResumeManager darkMode={darkMode} />
-          </Tab.Panel>
+      {/* Job Search Section */}
+      <motion.section
+        id="job-search-section" // Ensure this ID matches the scroll target
+        variants={sectionVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <JobSearchPanel
+          searchParams={searchParams}
+          onSearch={onSearch}
+          darkMode={darkMode}
+        />
+      </motion.section>
 
-          <Tab.Panel>
-            <div className={`p-6 rounded-xl ${
-              darkMode ? 'bg-surface-800' : 'bg-white'
-            } shadow-lg`}>
-              <h3 className="text-xl font-semibold mb-4">Settings</h3>
-              {/* Add settings content */}
-            </div>
-          </Tab.Panel>
-        </Tab.Panels>
-      </Tab.Group>
+      {/* Resume Manager Section */}
+      <motion.section
+        id="resume-manager-section" // Add ID for potential scrolling
+        variants={sectionVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        {/* Render ResumeManager - Assuming it's a self-contained component */}
+        {/* You might pass darkMode or other relevant props */}
+        <ResumeManager darkMode={darkMode} />
+      </motion.section>
+
+      {/* Add other dashboard sections/components here as needed */}
+
     </div>
   );
 };
